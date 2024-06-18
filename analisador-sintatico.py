@@ -1,5 +1,201 @@
 import os
 
+class analisadorSintatico:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.token_atual_index = 0
+        self.erros_sintaticos = []
+        self.fim_tokens = False
+
+    #Método para consumir o token atual e verificar se é o token esperado
+    def eat(self, token_esperado, analisar_tipo = 0):
+        cont = 0
+        if analisar_tipo == 0:
+            while self.token_atual_index <= len(self.tokens) - 1 and self.token_atual()[2].strip() not in token_esperado:
+                if cont == 0:
+                    self.error(token_esperado)
+                self.token_atual_index += 1
+                cont += 1
+        else:
+            while self.token_atual_index <= len(self.tokens) - 1 and self.token_atual()[1] not in token_esperado:
+                if cont == 0:
+                    self.error(token_esperado)
+                self.token_atual_index += 1
+                cont += 1
+        
+        self.token_atual_index += 1
+        if self.token_atual_index >= len(self.tokens):
+            self.fim_tokens = True
+            self.token_atual_index = len(self.tokens) - 1
+
+    #Método para retornar o token atual
+    def token_atual(self):
+        return self.tokens[self.token_atual_index].split(" ")
+    
+    #Método para retornar o token anterior
+    def token_anterior(self):
+        if self.token_atual_index != 0:
+            return self.tokens[self.token_atual_index-1].split(" ")
+        return self.tokens[self.token_atual_index].split(" ")
+
+    #Método para salvar os erros sintáticos
+    def error(self, token_esperado):
+        if len(token_esperado) > 1:
+            self.erros_sintaticos.append('Erro na linha ' + self.token_atual()[0] + ' (esperado "'+ ' || '.join(token_esperado) + '" porem encontrou "' + self.token_atual()[2].strip() +
+                                     '" do tipo {' + self.token_atual()[1] + '}).')
+        else:
+            self.erros_sintaticos.append('Erro na linha ' + self.token_atual()[0] + ' (esperado "'+ ''.join(token_esperado) + '" porem encontrou "' + self.token_atual()[2].strip() +
+                                     '" do tipo {' + self.token_atual()[1] + '}).')
+
+    #Método para iniciar a análise sintática
+    def startAnalisador(self):
+        self.programa()
+
+    #Método da análise do corpo 'algoritmo'
+    def programa(self):
+        self.eat(['algoritmo'])
+        self.eat(['{'])
+        if self.token_atual()[2].strip() == 'constantes':
+            self.constantes()
+        if self.token_atual()[2].strip() == 'variaveis':
+            self.variaveis()
+        if self.token_atual()[2].strip() == 'registro':
+            self.registro()
+        self.principal()
+        self.eat(['}'])
+
+    #Método da análise do corpo de 'constantes'
+    def constantes(self):
+        self.eat(['constantes'])
+        self.eat(['{'])
+        while self.token_atual()[2].strip() != '}':
+            self.declaracao_const()
+        self.eat(['}'])
+
+    #Método da análise da declaração de constantes
+    def declaracao_const(self):
+        self.eat(['inteiro', 'real', 'booleano', 'char', 'cadeia'])
+        self.eat(['IDE'], 1)
+        self.eat(['='])
+        self.expressao()
+        while self.token_atual()[2].strip() == ',':
+            self.eat([','])
+            self.eat(['IDE'], 1)
+            self.eat(['='])
+            self.expressao()
+        self.eat([';'])
+
+    #Método da análise do corpo 'variaveis'
+    def variaveis(self):
+        self.eat(['variaveis'])
+        self.eat(['{'])
+        while self.token_atual()[2].strip() != '}':
+            self.declaracao_var()
+        self.eat(['}'])
+
+
+    #Método da análise da declaração de variáveis
+    def declaracao_var(self):
+        cont = 0
+        while self.token_atual()[2].strip() not in ('inteiro', 'real', 'booleano', 'char', 'cadeia') and self.token_atual()[1] != 'IDE' and self.fim_tokens == False:
+            if cont == 0:
+                self.error(['inteiro || real || booleano || char || cadeia || registro'])
+            self.token_atual_index += 1
+            cont += 1
+        self.eat([self.token_atual()[2].strip()])
+        self.eat(['IDE'], 1)
+        if self.token_atual()[2].strip() == '[':
+            self.declaracao_vetor()
+        while self.token_atual()[2].strip() == ',':
+            self.eat([','])
+            self.eat(['IDE'], 1)
+            if self.token_atual()[2].strip() == '[':
+                self.declaracao_vetor()
+        self.eat([';'])
+
+    #Método da análise do corpo 'registro'
+    def registro(self):
+        self.eat(['registro'])
+        self.eat(['IDE'], 1)
+        self.eat(['{'])
+        while self.token_atual()[2].strip() != '}':
+            self.eat(['inteiro', 'real', 'booleano', 'char', 'cadeia'])
+            self.eat(['IDE'], 1)
+            if self.token_atual()[2].strip() == '[':
+                self.declaracao_vetor()
+            while self.token_atual()[2].strip() == ',':
+                self.eat([','])
+                self.eat(['IDE'], 1)
+                if self.token_atual()[2].strip() == '[':
+                    self.declaracao_vetor()
+            self.eat([';'])
+        self.eat(['}'])
+
+    #Método da análise do corpo 'principal'
+    def principal(self):
+        self.eat(['principal'])
+        self.eat(['{'])
+        self.eat(['}'])
+
+    #Método da análise de expressão geral
+    def expressao(self):
+        cont = 0
+        cont1 = 0
+        while self.token_atual()[2].strip() not in (';', ']', ',') and self.token_atual()[1] != 'REL' and self.fim_tokens == False:
+            cont += 1
+            if cont != 1:
+                self.eat(['ART', 'LOG'], 1)
+            while self.token_atual()[1] not in ('NRO', 'IDE', 'CAC') and self.token_atual()[2].strip() not in ('falso', 'verdadeiro') and self.fim_tokens == False:
+                if cont1 == 0:
+                    self.error(['NRO || IDE || CAC || falso || verdadeiro'])
+                self.token_atual_index += 1
+                cont1 += 1
+            self.eat([self.token_atual()[2].strip()])
+            if self.token_anterior()[1] == 'IDE':
+                if self.token_atual()[2].strip() == '.':
+                    self.eat(['.'])
+                    self.eat(['IDE'], 1)
+                elif self.token_atual()[2].strip() == '(':
+                    self.eat(['('])
+                    if self.token_atual()[1] == 'IDE':
+                        self.eat(['IDE'], 1)
+                        while self.token_atual()[2].strip() == ',':
+                            self.eat([','])
+                            self.eat(['IDE'], 1)
+                    self.eat([')'])
+                elif self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.expressao()
+                    self.eat([']'])
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.expressao()
+                        self.eat([']'])
+
+        if cont == 0:
+            self.error(['algum valor'])
+    
+    #Método da análise da declaração de vetores e matrizes
+    def declaracao_vetor(self):
+        self.eat(['['])
+        self.eat(['NRO'], 1)
+        self.eat([']'])
+        if self.token_atual()[2].strip() == '[':
+            self.eat(['['])
+            self.eat(['NRO'], 1)
+            self.eat([']'])
+    
+    #Método da análise da definição de uma função
+    def funcao(self):
+        self.eat(['funcao'])
+        self.eat(['IDE'], 1)
+        self.eat(['IDE'], 1)
+        self.eat(['('])
+        self.eat([')'])
+        self.eat(['{'])
+        self.eat(['}'])
+
+
 def estados (estado_atual, caractere, lexema, ultimo_token):
     palavras_reservadas = ["algoritmo", "principal", "variaveis", "constantes",
                            "registro", "funcao", "retorno", "vazio", "se", "senao",
@@ -2044,16 +2240,9 @@ for diretorio, pastas, arquivos in os.walk(pasta):
             erros.append(str(numero_da_linha_comentario_bloco) + ' CoMF ' + lexema[:len(lexema)-1] + '\n')
             estado_atual = 0
             lexema = ''
-      
-        #Preenchendo o arquivo de saída com os tokens
-        with open(diretorio + '\\' + nome_arquivo, "a") as arquivo_saida:
-            if acertos:
-                for i in acertos:
-                    arquivo_saida.write(i)
-            if erros:
-                if acertos:
-                    arquivo_saida.write("\n")
-                for i in erros:
-                    arquivo_saida.write(i)
-            else:
-                arquivo_saida.write("\nSeu codigo nao possui erros lexicos.")
+
+        #Criando um objeto da classe analisadorSintatico e passando os tokens gerados no analisador léxico como atributo deste objeto.
+        analisador_sintatico = analisadorSintatico(acertos)
+        analisador_sintatico.startAnalisador()
+
+        print(analisador_sintatico.erros_sintaticos)

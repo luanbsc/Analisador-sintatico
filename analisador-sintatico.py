@@ -23,6 +23,10 @@ class analisadorSintatico:
                 self.token_atual_index += 1
                 cont += 1
         
+        self.update_token_index()
+
+    #Método para ir para o próximo token
+    def update_token_index(self):
         self.token_atual_index += 1
         if self.token_atual_index >= len(self.tokens):
             self.fim_tokens = True
@@ -40,12 +44,13 @@ class analisadorSintatico:
 
     #Método para salvar os erros sintáticos
     def error(self, token_esperado):
-        if len(token_esperado) > 1:
-            self.erros_sintaticos.append('Erro na linha ' + self.token_atual()[0] + ' (esperado "'+ ' || '.join(token_esperado) + '" porem encontrou "' + self.token_atual()[2].strip() +
-                                     '" do tipo {' + self.token_atual()[1] + '}).')
-        else:
-            self.erros_sintaticos.append('Erro na linha ' + self.token_atual()[0] + ' (esperado "'+ ''.join(token_esperado) + '" porem encontrou "' + self.token_atual()[2].strip() +
-                                     '" do tipo {' + self.token_atual()[1] + '}).')
+        if not self.fim_tokens:
+            if len(token_esperado) > 1:
+                self.erros_sintaticos.append('Erro na linha ' + self.token_atual()[0] + ' (esperado "'+ ' || '.join(token_esperado) + '" porem encontrou "' + self.token_atual()[2].strip() +
+                                        '" do tipo {' + self.token_atual()[1] + '}).')
+            else:
+                self.erros_sintaticos.append('Erro na linha ' + self.token_atual()[0] + ' (esperado "'+ ''.join(token_esperado) + '" porem encontrou "' + self.token_atual()[2].strip() +
+                                        '" do tipo {' + self.token_atual()[1] + '}).')
 
     #Método para iniciar a análise sintática
     def startAnalisador(self):
@@ -61,6 +66,8 @@ class analisadorSintatico:
             self.variaveis()
         if self.token_atual()[2].strip() == 'registro':
             self.registro()
+        while self.token_atual()[2].strip() == 'funcao':
+            self.funcao()
         self.principal()
         self.eat(['}'])
 
@@ -100,7 +107,7 @@ class analisadorSintatico:
         while self.token_atual()[2].strip() not in ('inteiro', 'real', 'booleano', 'char', 'cadeia') and self.token_atual()[1] != 'IDE' and self.fim_tokens == False:
             if cont == 0:
                 self.error(['inteiro || real || booleano || char || cadeia || registro'])
-            self.token_atual_index += 1
+            self.update_token_index()
             cont += 1
         self.eat([self.token_atual()[2].strip()])
         self.eat(['IDE'], 1)
@@ -135,46 +142,100 @@ class analisadorSintatico:
     def principal(self):
         self.eat(['principal'])
         self.eat(['{'])
+        self.escopo(True)
         self.eat(['}'])
 
     #Método da análise de expressão geral
-    def expressao(self):
+    def expressao(self, permitir_nulo = False):
         cont = 0
         cont1 = 0
-        while self.token_atual()[2].strip() not in (';', ']', ',') and self.token_atual()[1] != 'REL' and self.fim_tokens == False:
+        cont2 = 0
+        while self.token_atual()[2].strip() not in (';', ']', ',', ')') and self.token_atual()[1] != 'REL' and self.fim_tokens == False:
             cont += 1
+
+            #Consumindo o operador
             if cont != 1:
-                self.eat(['ART', 'LOG'], 1)
-            while self.token_atual()[1] not in ('NRO', 'IDE', 'CAC') and self.token_atual()[2].strip() not in ('falso', 'verdadeiro') and self.fim_tokens == False:
+                while self.fim_tokens == False and (self.token_atual()[1] not in ('ART', 'LOG') or self.token_atual()[2].strip() in ('++', '--', '!')):
+                    if cont2 == 0:
+                        self.error(['ART || LOG com excecao de: ++, --, !'])
+                    self.update_token_index()
+                    cont2 += 1
+                self.eat([self.token_atual()[2].strip()])
+                cont2 = 0
+            
+            #Consumindo o ''valor'' após o operador
+            while self.token_atual()[1] not in ('NRO', 'IDE', 'CAC') and self.token_atual()[2].strip() not in ('falso', 'verdadeiro', '!', '(') and self.fim_tokens == False:
                 if cont1 == 0:
                     self.error(['NRO || IDE || CAC || falso || verdadeiro'])
-                self.token_atual_index += 1
+                self.update_token_index()
                 cont1 += 1
+            cont1 = 0
             self.eat([self.token_atual()[2].strip()])
             if self.token_anterior()[1] == 'IDE':
                 if self.token_atual()[2].strip() == '.':
                     self.eat(['.'])
                     self.eat(['IDE'], 1)
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
+                        if self.token_atual()[2].strip() == '[':
+                            self.eat(['['])
+                            self.eat(['NRO'], 1)
+                            self.eat([']'])
                 elif self.token_atual()[2].strip() == '(':
                     self.eat(['('])
-                    if self.token_atual()[1] == 'IDE':
-                        self.eat(['IDE'], 1)
-                        while self.token_atual()[2].strip() == ',':
-                            self.eat([','])
-                            self.eat(['IDE'], 1)
+                    self.expressao(True)
+                    while self.token_atual()[2].strip() == ',' and self.token_anterior()[2].strip() != '(':
+                        self.eat([','])
+                        self.expressao()
                     self.eat([')'])
                 elif self.token_atual()[2].strip() == '[':
                     self.eat(['['])
-                    self.expressao()
+                    self.eat(['NRO'], 1)
                     self.eat([']'])
                     if self.token_atual()[2].strip() == '[':
                         self.eat(['['])
-                        self.expressao()
+                        self.eat(['NRO'], 1)
                         self.eat([']'])
+            
+            elif self.token_anterior()[2].strip() == '!':
+                self.eat(['IDE'], 1)
+                if self.token_atual()[2].strip() == '.':
+                    self.eat(['.'])
+                    self.eat(['IDE'], 1)
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
+                        if self.token_atual()[2].strip() == '[':
+                            self.eat(['['])
+                            self.eat(['NRO'], 1)
+                            self.eat([']'])
+                elif self.token_atual()[2].strip() == '(':
+                    self.eat(['('])
+                    self.expressao(True)
+                    while self.token_atual()[2].strip() == ',' and self.token_anterior()[2].strip() != '(':
+                        self.eat([','])
+                        self.expressao()
+                    self.eat([')'])
+                elif self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
+            
+            elif self.token_anterior()[2].strip() == '(':
+                self.expressao()
+                self.eat([')'])
 
-        if cont == 0:
-            self.error(['algum valor'])
-    
+
+        if cont == 0 and permitir_nulo == False:
+            self.error(['Valor ou expressao'])
+
     #Método da análise da declaração de vetores e matrizes
     def declaracao_vetor(self):
         self.eat(['['])
@@ -188,13 +249,204 @@ class analisadorSintatico:
     #Método da análise da definição de uma função
     def funcao(self):
         self.eat(['funcao'])
-        self.eat(['IDE'], 1)
+        if self.token_atual()[2].strip() in ('inteiro', 'real', 'booleano', 'char', 'cadeia', 'vazio'):
+            self.eat(['inteiro', 'real', 'booleano', 'char', 'cadeia', 'vazio'])
+        else:
+            self.eat(['IDE'], 1)
         self.eat(['IDE'], 1)
         self.eat(['('])
+        if self.token_atual()[1] in ['IDE', 'PRE']:
+            self.eat(['inteiro', 'real', 'booleano', 'char', 'cadeia'])
+            self.eat(['IDE'], 1)
+            if self.token_atual()[2].strip() == '[':
+                self.eat(['['])
+                self.eat(['NRO'], 1)
+                self.eat([']'])
+                if self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+            while self.token_atual()[2].strip() == ',':
+                self.eat([','])
+                self.eat(['inteiro', 'real', 'booleano', 'char', 'cadeia'])
+                self.eat(['IDE'], 1)
+                if self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
         self.eat([')'])
         self.eat(['{'])
+        if self.token_atual()[2].strip() == 'variaveis':
+            self.variaveis()
+        self.escopo(True)
+        self.eat(['retorno'])
+        self.expressao(True)
+        self.eat([';'])
         self.eat(['}'])
 
+    #Método da análise do ''leia()''
+    def leia(self):
+        self.eat(['leia'])
+        self.eat(['('])
+        self.eat(['IDE'], 1)
+        if self.token_atual()[2].strip() == '.':
+            self.eat(['.'])
+            self.eat(['IDE'], 1)
+            if self.token_atual()[2].strip() == '[':
+                self.eat(['['])
+                self.eat(['NRO'], 1)
+                self.eat([']'])
+                if self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+        elif self.token_atual()[2].strip() == '[':
+            self.eat(['['])
+            self.eat(['NRO'], 1)
+            self.eat([']'])
+            if self.token_atual()[2].strip() == '[':
+                self.eat(['['])
+                self.eat(['NRO'], 1)
+                self.eat([']'])
+        self.eat([')'])
+        self.eat([';'])
+    
+    #Método da análise do ''escreva()''
+    def escreva(self):
+        self.eat(['escreva'])
+        self.eat(['('])
+        self.eat(['IDE', 'NRO', 'CAC'], 1)
+        if self.token_anterior()[1] == 'IDE':
+            if self.token_atual()[2].strip() == '.':
+                self.eat(['.'])
+                self.eat(['IDE'], 1)
+                if self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
+            elif self.token_atual()[2].strip() == '[':
+                self.eat(['['])
+                self.eat(['NRO'], 1)
+                self.eat([']'])
+                if self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+        self.eat([')'])
+        self.eat([';'])
+
+    #Método da análise do ''enquanto()''
+    def enquanto(self):
+        cont = 0
+        self.eat(['enquanto'])
+        self.eat(['('])
+        self.expressao()
+        while self.token_atual()[1] != 'REL' or self.token_atual()[2].strip() == '=':
+            if cont == 0:
+                self.error(['REL com excecao de: ='])
+            self.update_token_index()
+            cont += 1
+        self.eat(['REL'], 1)
+        self.expressao()
+        self.eat([')'])
+        self.eat(['{'])
+        self.escopo()
+        self.eat(['}'])
+    
+    #Método da análise do ''se()''
+    def se(self):
+        self.eat(['se'])
+        self.eat(['('])
+        self.expressao()
+        self.eat([')'])
+        self.eat(['{'])
+        self.escopo()
+        self.eat(['}'])
+        if self.token_atual()[2].strip() == 'senao':
+            self.senao()
+    
+    #Método da análise do ''senao''
+    def senao(self):
+        self.eat(['senao'])
+        self.eat(['{'])
+        self.escopo()
+        self.eat(['}'])
+    
+    #Método da análise de escopo
+    def escopo(self, permitir_nulo = False):
+        cont = 0
+        while self.token_atual()[2].strip() != '}' and self.token_atual()[2].strip() != 'retorno':
+            if self.token_atual()[1] == 'IDE':
+                cont = 0
+                self.eat(['IDE'], 1)
+                if self.token_atual()[2].strip() == '.':
+                    self.eat(['.'])
+                    self.eat(['IDE'], 1)
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
+                        if self.token_atual()[2].strip() == '[':
+                            self.eat(['['])
+                            self.eat(['NRO'], 1)
+                            self.eat([']'])
+                    #Atribuição
+                    self.eat(['='])
+                    self.expressao()
+                    self.eat([';'])
+                elif self.token_atual()[2].strip() == '[':
+                    self.eat(['['])
+                    self.eat(['NRO'], 1)
+                    self.eat([']'])
+                    if self.token_atual()[2].strip() == '[':
+                        self.eat(['['])
+                        self.eat(['NRO'], 1)
+                        self.eat([']'])
+                    #Atribuição
+                    self.eat(['='])
+                    self.expressao()
+                    self.eat([';'])
+                #Chamada de função
+                elif self.token_atual()[2].strip() == '(':
+                    self.eat(['('])
+                    self.expressao(True)
+                    while self.token_atual()[2].strip() == ',' and self.token_anterior()[2].strip() != '(':
+                        self.eat([','])
+                        self.expressao()
+                    self.eat([')'])
+                    self.eat([';'])
+                elif self.token_atual()[2].strip() == '=':
+                    self.eat(['='])
+                    self.expressao()
+                    self.eat([';'])
+            elif self.token_atual()[2].strip() == 'se':
+                cont = 0
+                self.se()
+            elif self.token_atual()[2].strip() == 'enquanto':
+                cont = 0
+                self.enquanto()
+            elif self.token_atual()[2].strip() == 'leia':
+                cont = 0
+                self.leia()
+            elif self.token_atual()[2].strip() == 'escreva':
+                cont = 0
+                self.escreva()
+            else:
+                if cont == 0:
+                    self.error(['Reatribuicao || Chamada de funcao || se || enquanto || leia || escreva'])
+                self.update_token_index()
+                cont += 1
+        
+        if cont == 0 and permitir_nulo == False and self.token_anterior()[2].strip() == '{':
+            self.error(['Reatribuicao || Chamada de funcao || se || enquanto || leia || escreva'])
 
 def estados (estado_atual, caractere, lexema, ultimo_token):
     palavras_reservadas = ["algoritmo", "principal", "variaveis", "constantes",
@@ -2245,4 +2497,10 @@ for diretorio, pastas, arquivos in os.walk(pasta):
         analisador_sintatico = analisadorSintatico(acertos)
         analisador_sintatico.startAnalisador()
 
-        print(analisador_sintatico.erros_sintaticos)
+        #Preenchendo o arquivo de saída com os resultados da análise sintática
+        with open(diretorio + '\\' + nome_arquivo, "a") as arquivo_saida:
+            if analisador_sintatico.erros_sintaticos:
+                for i in analisador_sintatico.erros_sintaticos:
+                    arquivo_saida.write(i+'\n')
+            else:
+                arquivo_saida.write("Seu codigo nao possui erros sintaticos.")

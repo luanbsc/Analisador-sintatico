@@ -141,6 +141,8 @@ class analisadorSintatico:
     #Método da análise do corpo 'principal'
     def principal(self):
         self.eat(['principal'])
+        self.eat(['('])
+        self.eat([')'])
         self.eat(['{'])
         self.escopo(True)
         self.eat(['}'])
